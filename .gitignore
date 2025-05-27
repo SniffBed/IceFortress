@@ -1,0 +1,12 @@
+# Project place file
+/IceFortress.rbxlx
+
+# Roblox Studio lock files
+/*.rbxlx.lock
+/*.rbxl.lock
+
+# Wally vendored code (regenerable)
+Packages/
+
+# Mac filesystem junk
+.DS_Store
