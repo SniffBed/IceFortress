@@ -34,16 +34,52 @@ local Profiles: { [Player]: any } = {}
 local sharedFolder = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local scriptTemplate = sharedFolder:WaitForChild("ShardToolClient") :: LocalScript
 
+-- Clone a visible crystal so the player actually holds it
+local baseCrystal = game:GetService("ServerStorage"):WaitForChild("FrostCrystal") :: BasePart
+local RARITY_COLORS = {
+    Common    = Color3.fromRGB(200, 200, 200),
+    Uncommon  = Color3.fromRGB(0, 255, 0),
+    Rare      = Color3.fromRGB(0, 170, 255),
+    Legendary = Color3.fromRGB(255, 170, 0),
+}
+
+local scriptTemplate = sharedFolder:WaitForChild("ShardToolClient") :: LocalScript
+
+----------------------------------------------------------------
+-- Utility: create a shard Tool so it shows in the hotbar
+----------------------------------------------------------------
 local function giveShardTool(player: Player, rarity: string)
+    ------------------------------------------------------------
+    -- Build the Tool shell
+    ------------------------------------------------------------
     local tool = Instance.new("Tool")
     tool.Name           = rarity .. "Shard"
-    tool.RequiresHandle = false
+    tool.RequiresHandle = true
     tool.CanBeDropped   = false
     tool:SetAttribute("Rarity", rarity)
 
-    -- Clone the pre‑made LocalScript (no Source write)
+    -- ▶ Shift the crystal 0.5 stud forward from the hand
+    tool.GripPos = Vector3.new(0, 0, 0.5)   -- ← adjust to taste
+
+    ------------------------------------------------------------
+    -- Visible Handle (clone the crystal model)
+    ------------------------------------------------------------
+    local handle = baseCrystal:Clone()
+    handle.Name       = "Handle"
+    handle.Color      = RARITY_COLORS[rarity] or handle.Color
+    handle.Anchored   = false
+    handle.CanCollide = false
+    handle.Massless   = true
+    handle.Parent     = tool
+
+    ------------------------------------------------------------
+    -- Placement LocalScript
+    ------------------------------------------------------------
     scriptTemplate:Clone().Parent = tool
 
+    ------------------------------------------------------------
+    -- Put in Backpack & StarterGear
+    ------------------------------------------------------------
     tool.Parent = player.Backpack
     tool:Clone().Parent = player.StarterGear
 end
