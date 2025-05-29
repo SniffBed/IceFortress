@@ -1,22 +1,14 @@
 --!strict
--- ShardToolClient
--- LocalScript that lives INSIDE every shard Tool.
--- When the tool is equipped, left‑clicking places that shard at the
--- surface point under the mouse cursor.
-
-local Players            = game:GetService("Players")
-local ReplicatedStorage  = game:GetService("ReplicatedStorage")
-local sharedFolder       = ReplicatedStorage:WaitForChild("Shared")
-local Remotes            = require(sharedFolder:WaitForChild("Remotes"))
+local Players           = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Remotes           = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes"))
 
 local player = Players.LocalPlayer
 local tool   = script.Parent
+local rarity = tool:GetAttribute("Rarity")   -- cached once
 
 --------------------------------------------------------------------
--- Helper: send placement request
---------------------------------------------------------------------
 local function requestPlace(hitPos: Vector3)
-    local rarity = tool:GetAttribute("Rarity")
     if rarity then
         Remotes.PlaceShard:FireServer(rarity, hitPos)
     end

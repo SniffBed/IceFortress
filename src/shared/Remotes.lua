@@ -41,8 +41,12 @@ if RunService:IsServer() then
     end
 end
 
+local ShardGrew = getEvent("ShardGrew")
+
 return {
-    InventoryUpdate = InventoryUpdate,
-    PlaceShard      = PlaceShard,
-    GetProfileData  = GetProfileData,
+  PlaceShard      = PlaceShard,
+  InventoryUpdate = InventoryUpdate,
+  MarketUpdate    = MarketUpdate,
+  GetProfileData  = GetProfileData,
+  ShardGrew       = ShardGrew,
 }

@@ -1,70 +1,66 @@
 --!strict
--- Client‑side controller:
---   • Finds the player’s HumanoidRootPart every frame
---   • Enables the ProximityPrompt on ONLY the nearest shard
---   • Ignores frames before the ShardMarketItems folder exists
+-- Enables only the nearest prompt and outlines it with rarity colour.
 
 local Players     = game:GetService("Players")
 local RunService  = game:GetService("RunService")
+local Replicated  = game:GetService("ReplicatedStorage")
 
 local player      = Players.LocalPlayer
-local rootPart: BasePart?   -- will be set / updated below
+local rootPart: BasePart?
+local RARITY_COLORS = require(Replicated:WaitForChild("Shared"):WaitForChild("ShardDefinitions")).RarityColors
 
---------------------------------------------------------------------
--- Helper: always have an up‑to‑date HumanoidRootPart reference
---------------------------------------------------------------------
 local function refreshRoot()
     local char = player.Character or player.CharacterAdded:Wait()
-    rootPart = char:FindFirstChild("HumanoidRootPart") :: BasePart
+    rootPart = char:WaitForChild("HumanoidRootPart") :: BasePart
 end
-
--- Initial fetch
 refreshRoot()
--- Update after respawn
-player.CharacterAdded:Connect(function()
-    refreshRoot()
-end)
+player.CharacterAdded:Connect(refreshRoot)
 
 --------------------------------------------------------------------
--- Per‑frame loop: enable nearest prompt
+-- Per‑frame loop
 --------------------------------------------------------------------
-local PROMPT_FOLDER_NAME = "ShardMarketItems"
-local CHECK_RADIUS       = 12.0   -- must match prompt.MaxActivationDistance
+local PROMPT_FOLDER = "ShardMarketItems"
+local RADIUS        = 12
 
 RunService.Heartbeat:Connect(function()
-    -- Bail if no character root yet
     if not rootPart or not rootPart.Parent then return end
+    local folder = workspace:FindFirstChild(PROMPT_FOLDER)
+    if not folder then return end
 
-    -- Wait until the server spawns the market folder
-    local marketFolder = workspace:FindFirstChild(PROMPT_FOLDER_NAME)
-    if not marketFolder then return end     -- skip this frame
-
-    ----------------------------------------------------------------
-    -- Pass 1: find the closest prompt within range
-    ----------------------------------------------------------------
-    local nearestPrompt: ProximityPrompt? = nil
-    local nearestDist    = CHECK_RADIUS + 0.1
-
-    for _, shard in ipairs(marketFolder:GetChildren()) do
+    local nearest, dist = nil, RADIUS+0.1
+    for _,shard in ipairs(folder:GetChildren()) do
         if shard:IsA("BasePart") then
             local prompt = shard:FindFirstChildWhichIsA("ProximityPrompt")
             if prompt then
-                local dist = (shard.Position - rootPart.Position).Magnitude
-                if dist <= prompt.MaxActivationDistance and dist < nearestDist then
-                    nearestPrompt = prompt
-                    nearestDist   = dist
+                local d = (shard.Position - rootPart.Position).Magnitude
+                if d <= prompt.MaxActivationDistance and d < dist then
+                    nearest, dist = prompt, d
                 end
             end
         end
     end
 
-    ----------------------------------------------------------------
-    -- Pass 2: enable only the nearest prompt, disable the rest
-    ----------------------------------------------------------------
-    for _, shard in ipairs(marketFolder:GetChildren()) do
+    for _,shard in ipairs(folder:GetChildren()) do
         local prompt = shard:FindFirstChildWhichIsA("ProximityPrompt")
         if prompt then
-            prompt.Enabled = (prompt == nearestPrompt)
+            local enable = (prompt == nearest)
+            prompt.Enabled = enable
+
+            -- outline logic
+            local hl = shard:FindFirstChild("ShopHighlight") :: Highlight?
+            if enable then
+                if not hl then
+                    hl = Instance.new("Highlight")
+                    hl.Name = "ShopHighlight"
+                    hl.FillTransparency = 1
+                    hl.OutlineTransparency = 0
+                    hl.Parent = shard
+                end
+                local rarity = shard:GetAttribute("Rarity") or "Common"
+                hl.OutlineColor = RARITY_COLORS[rarity] or Color3.new(1,1,1)
+            elseif hl then
+                hl:Destroy()
+            end
         end
     end
 end)
