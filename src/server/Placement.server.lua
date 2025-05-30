@@ -24,6 +24,8 @@ local DataManager = require(game:GetService("ServerScriptService")
 local BASE_CRYSTAL = ServerStorage:WaitForChild("FrostCrystal") :: Model
 local placedFolder = Workspace:FindFirstChild("PlacedShards") or Instance.new("Folder", Workspace)
 placedFolder.Name  = "PlacedShards"
+-- reference to the game’s baseplate (for placement checks)
+local baseplate = Workspace:FindFirstChild("Baseplate")
 
 -- utility functions
 
@@ -37,13 +39,10 @@ local function pickStageModel(rarity: string, structure: string, stage: number):
         or ShardDefs[rarity].Structures[firstStructure(rarity)]
     local list = sDef and sDef.Stages[stage]
     if not list or #list == 0 then
-        print(string.format("[PickStageModel] Using BASE_CRYSTAL for %s/%s stage %d", rarity, structure, stage))
         return BASE_CRYSTAL
     end
     local selected = list[math.random(#list)]:Clone()
-    print(string.format("[PickStageModel] Selected model '%s' for %s/%s stage %d",
-        selected.Name or "unnamed", rarity, structure, stage))
-    
+
     -- Log model structure
     local partCount = 0
     for _, part in ipairs(selected:GetDescendants()) do
@@ -60,20 +59,8 @@ local function pickStageModel(rarity: string, structure: string, stage: number):
                 -- Fallback: check if the part name contains "cylinder"
                 isCylinder = true
             end
-            
-            if isCylinder then
-                print(string.format("  - CYLINDER '%s': Position(%.2f, %.2f, %.2f), Size(%.2f height, %.2f diam, %.2f diam)",
-                    part.Name, part.Position.X, part.Position.Y, part.Position.Z,
-                    part.Size.X, part.Size.Y, part.Size.Z))
-            else
-                print(string.format("  - Part '%s': Position(%.2f, %.2f, %.2f), Size(%.2f, %.2f, %.2f), Type: %s",
-                    part.Name, part.Position.X, part.Position.Y, part.Position.Z,
-                    part.Size.X, part.Size.Y, part.Size.Z, part.ClassName))
-            end
         end
     end
-    print(string.format("  Total parts in model: %d", partCount))
-    
     return selected
 end
 
@@ -84,7 +71,6 @@ local function removeTool(plr: Player, rarity: string, structure: string)
                 and tool:GetAttribute("Rarity")==rarity
                 and tool:GetAttribute("Structure")==structure then
                 tool:Destroy()
-                print(string.format("[RemoveTool] Removed %s/%s tool from %s", rarity, structure, plr.Name))
                 return
             end
         end
@@ -95,10 +81,7 @@ end
 local function getActualBounds(model: Model)
     local minX, minY, minZ = math.huge, math.huge, math.huge
     local maxX, maxY, maxZ = -math.huge, -math.huge, -math.huge
-    local partCount = 0
-    
-    print("[GetActualBounds] Calculating bounds for model...")
-    
+    local partCount = 0   
     for _, part in ipairs(model:GetDescendants()) do
         if part:IsA("BasePart") then
             partCount = partCount + 1
@@ -121,11 +104,6 @@ local function getActualBounds(model: Model)
             local partMaxX, partMaxY, partMaxZ
             
             if isCylinder then
-                -- For cylinders: Size.X is height (Y-axis), Size.Y/Z are diameter
-                print(string.format("  CYLINDER '%s': Pos(%.2f, %.2f, %.2f), Size(%.2f, %.2f, %.2f)",
-                    part.Name, pos.X, pos.Y, pos.Z, size.X, size.Y, size.Z))
-                print("    -> Swapping axes: X=height, Y/Z=diameter")
-                
                 -- Swap the axes for cylinders
                 partMinX = pos.X - size.Z/2  -- Z becomes X width
                 partMinY = pos.Y - size.X/2  -- X becomes Y height
@@ -133,9 +111,7 @@ local function getActualBounds(model: Model)
                 partMaxX = pos.X + size.Z/2
                 partMaxY = pos.Y + size.X/2
                 partMaxZ = pos.Z + size.Y/2
-                
-                print(string.format("    -> Actual bounds: Y from %.2f to %.2f (bottom: %.2f)",
-                    partMinY, partMaxY, partMinY))
+
             else
                 -- Normal parts
                 partMinX = pos.X - size.X/2
@@ -144,9 +120,6 @@ local function getActualBounds(model: Model)
                 partMaxX = pos.X + size.X/2
                 partMaxY = pos.Y + size.Y/2
                 partMaxZ = pos.Z + size.Z/2
-                
-                print(string.format("  Part '%s': Pos(%.2f, %.2f, %.2f), Size(%.2f, %.2f, %.2f), Bottom Y: %.2f",
-                    part.Name, pos.X, pos.Y, pos.Z, size.X, size.Y, size.Z, partMinY))
             end
             
             -- Update overall bounds
@@ -161,28 +134,57 @@ local function getActualBounds(model: Model)
     
     local center = Vector3.new((minX + maxX)/2, (minY + maxY)/2, (minZ + maxZ)/2)
     local size = Vector3.new(maxX - minX, maxY - minY, maxZ - minZ)
-    
-    print(string.format("  Calculated bounds - Center: (%.2f, %.2f, %.2f), Size: (%.2f, %.2f, %.2f)",
-        center.X, center.Y, center.Z, size.X, size.Y, size.Z))
-    print(string.format("  Actual bottom Y: %.2f (from %d parts)", minY, partCount))
-    
-    -- Compare with GetBoundingBox for debugging
-    local bbCF, bbSize = model:GetBoundingBox()
-    print(string.format("  GetBoundingBox - Center: (%.2f, %.2f, %.2f), Size: (%.2f, %.2f, %.2f)",
-        bbCF.Position.X, bbCF.Position.Y, bbCF.Position.Z, bbSize.X, bbSize.Y, bbSize.Z))
-    print(string.format("  GetBoundingBox bottom Y: %.2f", bbCF.Position.Y - bbSize.Y/2))
-    print(string.format("  Difference in Y: %.2f", (bbCF.Position.Y - bbSize.Y/2) - minY))
-    
+
     return center, size, minY  -- Return center, size, and actual bottom Y
+end
+
+--------------------------------------------------------------------
+-- canPlace → true if the shard’s final-stage footprint is clear   --
+--------------------------------------------------------------------
+local function canPlace(plr: Player, rarity: string, struct: string, pos: Vector3): boolean    -- clone the final-stage model (largest footprint)
+    local probe = pickStageModel(rarity, struct, 10):Clone()
+    probe.Parent = Workspace
+
+    -- move probe so its actual bottom sits on pos
+    local center, size, bottomY = getActualBounds(probe)
+    local offsetY = pos.Y - bottomY
+    for _, p in ipairs(probe:GetDescendants()) do
+        if p:IsA("BasePart") then
+            p.Position += Vector3.new(pos.X - center.X, offsetY, pos.Z - center.Z)
+            p.CanQuery = false -- exclude from overlap test
+        end
+    end
+
+    -- invisible part matching probe’s bounding box
+    local region = Instance.new("Part")
+    region.Size = size
+    region.CFrame = CFrame.new(Vector3.new(pos.X, pos.Y + size.Y/2, pos.Z))
+    region.Anchored, region.Transparency, region.CanCollide = true, 1, false
+    region.Parent = Workspace
+
+    local params = OverlapParams.new()
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.FilterDescendantsInstances = {probe, region, baseplate}
+
+    local collisions = Workspace:GetPartsInPart(region, params)
+    local blocked = false
+    for _, part in ipairs(collisions) do
+        -- ignore parts belonging to the placing player’s own character
+        if not (plr.Character and part:IsDescendantOf(plr.Character)) then
+            blocked = true
+            break
+        end
+    end
+    
+    region:Destroy()
+    probe:Destroy()
+    return not blocked
 end
 
 -- income loop (starts at Stage 10)
 local function startIncome(container: Model, plr: Player, incPerMin: number)
     plr:SetAttribute("MoneyPerMinute",
         (plr:GetAttribute("MoneyPerMinute") or 0) + incPerMin)
-    
-    print(string.format("[StartIncome] Starting income for %s: %d/min", plr.Name, incPerMin))
-    
     task.spawn(function()
         local carry = 0
         while container.Parent do
@@ -200,15 +202,11 @@ local function startIncome(container: Model, plr: Player, incPerMin: number)
                 plr:SetAttribute("Cash", prof.Data.Cash)
             end
         end
-        print(string.format("[Income] Stopped for %s", plr.Name))
     end)
 end
 
 -- spawn container
 local function spawnContainer(plr, rarity, struct, stage, pos)
-    print(string.format("\n[SpawnContainer] === SPAWNING %s/%s STAGE %d ===", rarity, struct, stage))
-    print(string.format("  Target position: (%.2f, %.2f, %.2f)", pos.X, pos.Y, pos.Z))
-    
     local cont = Instance.new("Model")
     cont.Name, cont.Parent = struct, placedFolder
     cont:SetAttribute("Owner", plr.UserId)
@@ -222,34 +220,17 @@ local function spawnContainer(plr, rarity, struct, stage, pos)
     -- Calculate offset to place bottom at target position
     local offsetY = pos.Y - actualBottomY
     
-    print(string.format("  Positioning calculations:"))
-    print(string.format("    - Target ground Y: %.2f", pos.Y))
-    print(string.format("    - Model bottom Y: %.2f", actualBottomY))
-    print(string.format("    - Offset Y needed: %.2f", offsetY))
-    
     -- Move the model to the correct position
-    print("  Moving parts...")
     for _, part in ipairs(model:GetDescendants()) do
         if part:IsA("BasePart") then
             local oldPos = part.Position
             part.Position = part.Position + Vector3.new(pos.X - center.X, offsetY, pos.Z - center.Z)
-            print(string.format("    - '%s': (%.2f, %.2f, %.2f) -> (%.2f, %.2f, %.2f)",
-                part.Name, oldPos.X, oldPos.Y, oldPos.Z, part.Position.X, part.Position.Y, part.Position.Z))
         end
     end
-    
-    -- Verify final position
-    local finalCenter, finalSize, finalBottomY = getActualBounds(model)
-    print(string.format("  Final verification:"))
-    print(string.format("    - Final center: (%.2f, %.2f, %.2f)", finalCenter.X, finalCenter.Y, finalCenter.Z))
-    print(string.format("    - Final bottom Y: %.2f", finalBottomY))
-    print(string.format("    - Bottom Y error: %.2f", math.abs(finalBottomY - pos.Y)))
-    
+
     if stage == ShardDefs.MAX_STAGE then
         startIncome(cont, plr, ShardDefs[rarity].Structures[struct].BaseIncome)
     end
-    
-    print(string.format("[SpawnContainer] === COMPLETE ===\n"))
     return cont
 end
 
@@ -265,15 +246,8 @@ local function grow(cont, rec, plr)
     local oldCenter, oldSize, oldBottomY = getActualBounds(cont)
     local groundY = oldBottomY  -- The ground level to maintain
     
-    print(string.format("  Current state:"))
-    print(string.format("    - Center: (%.2f, %.2f, %.2f)", oldCenter.X, oldCenter.Y, oldCenter.Z))
-    print(string.format("    - Size: (%.2f, %.2f, %.2f)", oldSize.X, oldSize.Y, oldSize.Z))
-    print(string.format("    - Ground Y to maintain: %.2f", groundY))
-    
     -- Clear old model
-    print("  Clearing old model...")
     for _, c in ipairs(cont:GetChildren()) do
-        print(string.format("    - Destroying: %s", c.Name))
         c:Destroy()
     end
     
@@ -287,41 +261,19 @@ local function grow(cont, rec, plr)
     -- Calculate offset to maintain ground level
     local offsetY = groundY - newBottomY
     
-    print(string.format("  Growth calculations:"))
-    print(string.format("    - New model bottom Y: %.2f", newBottomY))
-    print(string.format("    - Ground Y to maintain: %.2f", groundY))
-    print(string.format("    - Offset Y needed: %.2f", offsetY))
-    
     -- Move all parts to maintain ground position
-    print("  Repositioning parts...")
     for _, part in ipairs(variant:GetDescendants()) do
         if part:IsA("BasePart") then
             local oldPos = part.Position
             part.Position = part.Position + Vector3.new(oldCenter.X - newCenter.X, offsetY, oldCenter.Z - newCenter.Z)
-            print(string.format("    - '%s': (%.2f, %.2f, %.2f) -> (%.2f, %.2f, %.2f)",
-                part.Name, oldPos.X, oldPos.Y, oldPos.Z, part.Position.X, part.Position.Y, part.Position.Z))
         end
     end
-    
-    -- Verify final position
-    local finalCenter, finalSize, finalBottomY = getActualBounds(variant)
-    print(string.format("  Final verification:"))
-    print(string.format("    - Final center: (%.2f, %.2f, %.2f)", finalCenter.X, finalCenter.Y, finalCenter.Z))
-    print(string.format("    - Final bottom Y: %.2f", finalBottomY))
-    print(string.format("    - Ground Y maintained: %s (error: %.2f)",
-        math.abs(finalBottomY - groundY) < 0.01 and "YES" or "NO", math.abs(finalBottomY - groundY)))
-    
+
     -- Update timing
     local dur = ShardDefs:GetStageDuration(rarity, struct)
     local baseT = rec.nextGrowthTime or os.time()
     rec.stage = nextStage
     rec.nextGrowthTime = (nextStage == ShardDefs.MAX_STAGE) and nil or (baseT + dur)
-    
-    print(string.format("  Timing update:"))
-    print(string.format("    - Stage duration: %d seconds", dur))
-    print(string.format("    - Next growth time: %s", tostring(rec.nextGrowthTime)))
-    print(string.format("[Growth] %s → Stage %d | nextGrowthTime=%s",
-        rec.id, nextStage, tostring(rec.nextGrowthTime)))
     
     if Remotes.ShardGrew then
         Remotes.ShardGrew:FireAllClients(cont, rarity, struct, nextStage)
@@ -340,12 +292,7 @@ local function grow(cont, rec, plr)
 end
 
 -- place shard
-Remotes.PlaceShard.OnServerEvent:Connect(function(plr, rarity: string, struct: string, hitPos: Vector3)
-    print(string.format("\n[PlaceShard] === PLACE REQUEST ==="))
-    print(string.format("  Player: %s", plr.Name))
-    print(string.format("  Rarity: %s, Structure: %s", rarity, struct))
-    print(string.format("  Hit position: (%.2f, %.2f, %.2f)", hitPos.X, hitPos.Y, hitPos.Z))
-    
+Remotes.PlaceShard.OnServerEvent:Connect(function(plr, rarity: string, struct: string, hitPos: Vector3)  
     local profile = DataManager.GetProfile(plr)
     if not profile then
         print("  ERROR: No profile found")
@@ -361,14 +308,30 @@ Remotes.PlaceShard.OnServerEvent:Connect(function(plr, rarity: string, struct: s
         struct = firstStructure(rarity)
         print(string.format("  Structure not found, using default: %s", struct))
     end
-    
+
+    ----------------------------------------------------------------
+    -- placement validation (baseplate only & no overlap)          --
+    ----------------------------------------------------------------
+    if not baseplate then
+        warn("Baseplate not found – cannot validate placement")
+        return
+    end
+    local baseTop = baseplate.Position.Y + baseplate.Size.Y/2
+    if math.abs(hitPos.Y - baseTop) > 0.1 then
+        print("  ERROR: Must place on baseplate top surface")
+        return
+    end
+    if not canPlace(plr, rarity, struct, hitPos) then
+        print("  ERROR: Space occupied – placement rejected")
+        return
+    end
+
     -- remove inventory entry
     local removed = false
     for i, r in ipairs(profile.Data.Inventory) do
         if r == rarity then
             table.remove(profile.Data.Inventory, i)
             removed = true
-            print(string.format("  Removed from inventory at index %d", i))
             break
         end
     end
@@ -411,8 +374,6 @@ end)
 
 -- restore on re-join
 Players.PlayerAdded:Connect(function(plr)
-    print(string.format("\n[PlayerAdded] %s joined", plr.Name))
-    
     repeat task.wait() until DataManager.GetProfile(plr)
     local profile = DataManager.GetProfile(plr)
     plr:SetAttribute("MoneyPerMinute", 0)
@@ -420,9 +381,6 @@ Players.PlayerAdded:Connect(function(plr)
     print(string.format("  Restoring %d placed shards", #profile.Data.PlacedShards))
     
     for i, rec in ipairs(profile.Data.PlacedShards) do
-        print(string.format("  [%d] Restoring %s: %s/%s stage %d at (%.2f, %.2f, %.2f)",
-            i, rec.id, rec.rarity, rec.structure, rec.stage, rec.pos.x, rec.pos.y, rec.pos.z))
-        
         local pos = Vector3.new(rec.pos.x, rec.pos.y, rec.pos.z)
         local cont = spawnContainer(plr, rec.rarity, rec.structure, rec.stage, pos)
         
