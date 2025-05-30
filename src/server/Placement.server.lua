@@ -275,11 +275,17 @@ local function grow(cont, rec, plr)
     rec.stage = nextStage
     rec.nextGrowthTime = (nextStage == ShardDefs.MAX_STAGE) and nil or (baseT + dur)
     
+    -- Send alert **only** when the shard has reached its final stage OR
+    -- its next growth time is now in the future (i.e., catch-up finished).
     if Remotes.ShardGrew then
-        Remotes.ShardGrew:FireAllClients(cont, rarity, struct, nextStage)
-        print("  Fired ShardGrew remote to all clients")
+        local isFinal   = nextStage == ShardDefs.MAX_STAGE          -- at max
+        local inFuture  = rec.nextGrowthTime and rec.nextGrowthTime > os.time()
+        if isFinal or inFuture then
+            Remotes.ShardGrew:FireClient(plr, cont, rarity, struct, nextStage)
+            print("  Fired ShardGrew remote to owner only")
+        end
     end
-    
+
     if nextStage == ShardDefs.MAX_STAGE then
         startIncome(cont, plr, ShardDefs[rarity].Structures[struct].BaseIncome)
     else
@@ -388,6 +394,13 @@ Players.PlayerAdded:Connect(function(plr)
         local pos = Vector3.new(rec.pos.x, rec.pos.y, rec.pos.z)
         local cont = spawnContainer(plr, rec.rarity, rec.structure, rec.stage, pos)
         
+        ------------------------------------------------------------------
+        -- If shard is already at max stage, clear any lingering timer   --
+        ------------------------------------------------------------------
+        if rec.stage == ShardDefs.MAX_STAGE then
+            rec.nextGrowthTime = nil
+        end
+
         if rec.nextGrowthTime then
             local wait = rec.nextGrowthTime - os.time()
             print(string.format("    Next growth in %.2f seconds", wait))

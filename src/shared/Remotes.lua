@@ -34,6 +34,7 @@ local InventoryUpdate = getEvent("InventoryUpdate")
 local PlaceShard      = getEvent("PlaceShard")
 local PlacementError  = getEvent("PlacementError")
 local GetProfileData  = getFunction("GetProfileData")
+local GlobalNotify    = getEvent("GlobalNotify")   -- NEW
 
 -- Server handler for initial data requests
 if RunService:IsServer() then
@@ -51,4 +52,5 @@ return {
   GetProfileData  = GetProfileData,
   ShardGrew       = ShardGrew,
   PlacementError  = PlacementError,
+  GlobalNotify    = GlobalNotify,
 }
