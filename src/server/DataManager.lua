@@ -5,6 +5,7 @@
 -- Services / modules
 ----------------------------------------------------------------------
 local Players             = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
 local ServerScriptService = game:GetService("ServerScriptService")
 local DataStoreService    = game:GetService("DataStoreService")
 local ReplicatedStorage   = game:GetService("ReplicatedStorage")
@@ -114,6 +115,18 @@ end
 
 local rawStore = DataStoreService:GetDataStore("PlayerStore")
 local function onPlayerRemoving(plr: Player)
+    ----------------------------------------------------------------
+    -- Despawn this player’s placed structures from Workspace     --
+    ----------------------------------------------------------------
+    local folder = Workspace:FindFirstChild("PlacedShards")
+    if folder then
+        for _, model in ipairs(folder:GetChildren()) do
+            if model:GetAttribute("Owner") == plr.UserId then
+                model:Destroy()
+            end
+        end
+    end
+
     local profile = Profiles[plr]
     if plr:GetAttribute("WipeProfile") then pcall(function() rawStore:RemoveAsync(tostring(plr.UserId)) end) end
     if profile then
