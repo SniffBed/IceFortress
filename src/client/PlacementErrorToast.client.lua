@@ -8,5 +8,5 @@ local Notifier = require(script.Parent:WaitForChild("Notifier"))
 
 
 Remotes.PlacementError.OnClientEvent:Connect(function(msg: string)
-    Notifier.Show("Placement failed: " .. msg)
+    Notifier.Show(msg)
 end)

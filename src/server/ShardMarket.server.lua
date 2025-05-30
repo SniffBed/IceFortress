@@ -121,7 +121,8 @@ local function spawnShards()
         prompt.ObjectText = structure:gsub("(%l)(%u)","%1 %2") .. " Shard"
         prompt.MaxActivationDistance = 12
         prompt.KeyboardKeyCode = Enum.KeyCode.E
-        prompt.Enabled = false
+        prompt.RequiresLineOfSight = false  -- Allow prompt through structures
+        prompt.Enabled = true  -- Enable the prompt!
         prompt.Parent  = crystal
 
         local conn = prompt.Triggered:Connect(function(player: Player)

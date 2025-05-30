@@ -138,10 +138,70 @@ local function getActualBounds(model: Model)
     return center, size, minY  -- Return center, size, and actual bottom Y
 end
 
+-- Cache for the largest stage 10 model bounds
+local largestStage10Bounds = nil
+local largestStage10Size = nil
+
+-- Function to find and cache the largest stage 10 model bounds
+local function getLargestStage10Bounds()
+    if largestStage10Bounds and largestStage10Size then
+        return largestStage10Bounds, largestStage10Size
+    end
+    
+    local maxVolume = 0
+    local maxSize = Vector3.new(0, 0, 0)
+    local maxCenter = Vector3.new(0, 0, 0)
+    
+    -- Iterate through all rarities and structures
+    for rarity, rarityData in pairs(ShardDefs) do
+        if type(rarityData) == "table" and rarityData.Structures then
+            for structure, structData in pairs(rarityData.Structures) do
+                if structData.Stages and structData.Stages[10] then
+                    -- Check each model in stage 10
+                    for _, modelTemplate in ipairs(structData.Stages[10]) do
+                        local testModel = modelTemplate:Clone()
+                        testModel.Parent = Workspace
+                        
+                        local center, size, _ = getActualBounds(testModel)
+                        local volume = size.X * size.Y * size.Z
+                        
+                        if volume > maxVolume then
+                            maxVolume = volume
+                            maxSize = size
+                            maxCenter = center
+                        end
+                        
+                        testModel:Destroy()
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Cache the results
+    largestStage10Bounds = maxCenter
+    largestStage10Size = maxSize
+    
+    return maxCenter, maxSize
+end
+
 --------------------------------------------------------------------
 -- canPlace → true if the shard’s final-stage footprint is clear   --
 --------------------------------------------------------------------
-local function canPlace(plr: Player, rarity: string, struct: string, pos: Vector3): boolean    -- clone the final-stage model (largest footprint)
+local function canPlace(plr: Player, rarity: string, struct: string, pos: Vector3): boolean
+    -- First check if position is within the largest stage 10 model bounds
+    local largestCenter, largestSize = getLargestStage10Bounds()
+    
+    -- Check if the placement position is within the bounding box of the largest stage 10 model
+    -- The model is assumed to be centered at the origin for this check
+    local halfSize = largestSize / 2
+    if math.abs(pos.X) <= halfSize.X and
+       pos.Y  >= 0          and pos.Y <= largestSize.Y and
+       math.abs(pos.Z) <= halfSize.Z then
+        return false
+    end
+    
+    -- clone the final-stage model (largest footprint)
     local probe = pickStageModel(rarity, struct, 10):Clone()
     probe.Parent = Workspace
 
@@ -324,13 +384,13 @@ Remotes.PlaceShard.OnServerEvent:Connect(function(plr, rarity: string, struct: s
     end
     local baseTop = baseplate.Position.Y + baseplate.Size.Y/2
     if math.abs(hitPos.Y - baseTop) > 0.1 then
-        local msg = "Must place on baseplate top surface"
+        local msg = "Shard must be placed on ground!"
         print("  ERROR: "..msg)
         Remotes.PlacementError:FireClient(plr, msg)   -- NEW
         return
     end
     if not canPlace(plr, rarity, struct, hitPos) then
-        local msg = "Space occupied – placement rejected"
+        local msg = "Too close to another structure!"
         print("  ERROR: "..msg)
         Remotes.PlacementError:FireClient(plr, msg)   -- NEW
         return
