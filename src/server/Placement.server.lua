@@ -318,11 +318,15 @@ Remotes.PlaceShard.OnServerEvent:Connect(function(plr, rarity: string, struct: s
     end
     local baseTop = baseplate.Position.Y + baseplate.Size.Y/2
     if math.abs(hitPos.Y - baseTop) > 0.1 then
-        print("  ERROR: Must place on baseplate top surface")
+        local msg = "Must place on baseplate top surface"
+        print("  ERROR: "..msg)
+        Remotes.PlacementError:FireClient(plr, msg)   -- NEW
         return
     end
     if not canPlace(plr, rarity, struct, hitPos) then
-        print("  ERROR: Space occupied – placement rejected")
+        local msg = "Space occupied – placement rejected"
+        print("  ERROR: "..msg)
+        Remotes.PlacementError:FireClient(plr, msg)   -- NEW
         return
     end
 

@@ -13,7 +13,10 @@
 
     "StarterPlayer": {
       "StarterPlayerScripts": {
-        "Client": { "$path": "src/client" }
+        "Client": { "$path": "src/client" },
+        "Notifier": {
+          "$className": "ModuleScript"
+        }        
       }
     },
 

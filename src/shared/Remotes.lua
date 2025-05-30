@@ -32,6 +32,7 @@ end
 -- Define the exact remotes your game uses:
 local InventoryUpdate = getEvent("InventoryUpdate")
 local PlaceShard      = getEvent("PlaceShard")
+local PlacementError  = getEvent("PlacementError")
 local GetProfileData  = getFunction("GetProfileData")
 
 -- Server handler for initial data requests
@@ -49,4 +50,5 @@ return {
   MarketUpdate    = MarketUpdate,
   GetProfileData  = GetProfileData,
   ShardGrew       = ShardGrew,
+  PlacementError  = PlacementError,
 }
