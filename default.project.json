@@ -16,7 +16,10 @@
         "Client": { "$path": "src/client" },
         "Notifier": {
           "$className": "ModuleScript"
-        }        
+        },
+        "ProximityPromptScript": {
+          "$path": "src/ProximityPromptScript.client.lua"
+        }
       }
     },
 
